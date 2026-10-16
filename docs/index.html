@@ -259,7 +259,15 @@ const readProvider = new ethers.JsonRpcProvider(RPC, 11155111, {staticNetwork: t
 let browserProvider, signer, me;
 const R = {}; // read-only contracts
 for (const [k, addr, abi] of [["uni", CFG.uni, [...ABI.erc20, ...ABI.faucet, ...ABI.votes]],["usdc", CFG.usdc, [...ABI.erc20, ...ABI.faucet]],["guni", CFG.guni, [...ABI.erc20, ...ABI.guni]],["morpho", CFG.morpho, ABI.morpho],["oracle", CFG.oracle, ABI.oracle],["irm", CFG.irm, ABI.irm]]) R[k] = new ethers.Contract(addr, abi, readProvider);
-const W = k => R[k].connect(signer);
+// Send through the wallet for signing only. Gas estimation, nonce and receipts go over the public RPC,
+// because wallet RPCs (Rabby's drpc endpoint, for one) often refuse eth_estimateGas / eth_getCode.
+async function S(k, method, args){
+  const data = R[k].interface.encodeFunctionData(method, args);
+  const to = CFG[k];
+  const gas = await readProvider.estimateGas({from: me, to, data}); // reverts surface here, with reason
+  const hash = await window.ethereum.request({method: "eth_sendTransaction", params: [{from: me, to, data, gas: "0x" + (gas * 130n / 100n).toString(16)}]});
+  return {hash, wait: () => readProvider.waitForTransaction(hash, 1, 180000)};
+}
 
 const f18 = (v, d=2) => Number(ethers.formatUnits(v, 18)).toLocaleString(undefined,{maximumFractionDigits:d});
 const f6 = (v, d=2) => Number(ethers.formatUnits(v, 6)).toLocaleString(undefined,{maximumFractionDigits:d});
@@ -286,19 +294,19 @@ async function tx(label, fn){
     return rc;
   }catch(e){
     const m = (e.shortMessage || e.message || String(e)).split("\n")[0];
-    const reason = e.revert?.name ? ` (${e.revert.name})` : (e.data && typeof e.data === "string" ? decodeError(e.data) : "");
+    const reason = e.revert?.name ? ` (${e.revert.name}${e.revert.args?.length ? ": " + e.revert.args.join(", ") : ""})` : (e.data && typeof e.data === "string" ? decodeError(e.data) : "");
     log(label + " · failed: " + m + reason, "err");
     throw e;
   }
 }
 function decodeError(data){
-  try{ const d = R.guni.interface.parseError(data); if (d) return ` (${d.name})`; }catch{}
+  for (const k of ["guni","morpho","uni","usdc","oracle"]){ try{ const d = R[k].interface.parseError(data); if (d) return ` (${d.name}${d.args?.length ? ": " + d.args.join(", ") : ""})`; }catch{} }
   return "";
 }
 async function ensureAllowance(tokenKey, spender, amount, label){
   const cur = await R[tokenKey].allowance(me, spender);
   if (cur >= amount) return;
-  await tx(`Approve ${label}`, () => W(tokenKey).approve(spender, ethers.MaxUint256));
+  await tx(`Approve ${label}`, () => S(tokenKey, "approve", [spender, ethers.MaxUint256]));
 }
 
 // ── wallet ──
@@ -441,21 +449,21 @@ async function refresh(){
 // ── actions ──
 const need = () => { if (!signer) { log("Connect a wallet first.", "err"); throw new Error("no signer"); } };
 $("connectBtn").onclick = connect;
-$("faucetUni").onclick = () => { need(); tx("Mint 1,000 UNI", () => W("uni").mint(me, p18("1000"))); };
-$("faucetUsdc").onclick = () => { need(); tx("Mint 1,000 USDC", () => W("usdc").mint(me, p6("1000"))); };
+$("faucetUni").onclick = () => { need(); tx("Mint 1,000 UNI", () => S("uni", "mint", [me, p18("1000")])); };
+$("faucetUsdc").onclick = () => { need(); tx("Mint 1,000 USDC", () => S("usdc", "mint", [me, p6("1000")])); };
 $("wrapBtn").onclick = async () => {
   need(); const amt = p18($("wrapAmt").value); if (amt === 0n) return log("Enter an amount.", "err");
   await ensureAllowance("uni", CFG.guni, amt, "UNI");
   const d = $("wrapDel").value.trim();
-  if (d && !$("wrapDel").disabled){ if (!ethers.isAddress(d)) return log("Delegate is not a valid address.", "err"); await tx(`Wrap ${f18(amt)} UNI → ${short(d)}`, () => W("guni")["wrap(uint256,address)"](amt, d)); }
-  else await tx(`Wrap ${f18(amt)} UNI`, () => W("guni")["wrap(uint256)"](amt));
+  if (d && !$("wrapDel").disabled){ if (!ethers.isAddress(d)) return log("Delegate is not a valid address.", "err"); await tx(`Wrap ${f18(amt)} UNI → ${short(d)}`, () => S("guni", "wrap(uint256,address)", [amt, d])); }
+  else await tx(`Wrap ${f18(amt)} UNI`, () => S("guni", "wrap(uint256)", [amt]));
   $("wrapAmt").value = "";
 };
-$("unwrapBtn").onclick = async () => { need(); const amt = p18($("unwrapAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Unwrap ${f18(amt)} gUNI`, () => W("guni").unwrap(amt, me)); $("unwrapAmt").value = ""; };
-$("setDelBtn").onclick = async () => { need(); const d = $("newDel").value.trim(); if (!ethers.isAddress(d)) return log("Enter a valid delegate address.", "err"); await tx(`Re-delegate to ${short(d)}`, () => W("guni").setDelegate(d)); $("newDel").value = ""; };
-$("supBtn").onclick = async () => { need(); const amt = p18($("supAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await ensureAllowance("guni", CFG.morpho, amt, "gUNI for Morpho"); await tx(`Supply ${f18(amt)} gUNI collateral`, () => W("morpho").supplyCollateral(mpTuple, amt, me, "0x")); $("supAmt").value = ""; };
-$("wdBtn").onclick = async () => { need(); const amt = p18($("wdAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Withdraw ${f18(amt)} gUNI collateral`, () => W("morpho").withdrawCollateral(mpTuple, amt, me, me)); $("wdAmt").value = ""; };
-$("borBtn").onclick = async () => { need(); const amt = p6($("borAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Borrow ${f6(amt)} USDC`, () => W("morpho").borrow(mpTuple, amt, 0n, me, me)); $("borAmt").value = ""; };
+$("unwrapBtn").onclick = async () => { need(); const amt = p18($("unwrapAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Unwrap ${f18(amt)} gUNI`, () => S("guni", "unwrap", [amt, me])); $("unwrapAmt").value = ""; };
+$("setDelBtn").onclick = async () => { need(); const d = $("newDel").value.trim(); if (!ethers.isAddress(d)) return log("Enter a valid delegate address.", "err"); await tx(`Re-delegate to ${short(d)}`, () => S("guni", "setDelegate", [d])); $("newDel").value = ""; };
+$("supBtn").onclick = async () => { need(); const amt = p18($("supAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await ensureAllowance("guni", CFG.morpho, amt, "gUNI for Morpho"); await tx(`Supply ${f18(amt)} gUNI collateral`, () => S("morpho", "supplyCollateral", [mpTuple, amt, me, "0x"])); $("supAmt").value = ""; };
+$("wdBtn").onclick = async () => { need(); const amt = p18($("wdAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Withdraw ${f18(amt)} gUNI collateral`, () => S("morpho", "withdrawCollateral", [mpTuple, amt, me, me])); $("wdAmt").value = ""; };
+$("borBtn").onclick = async () => { need(); const amt = p6($("borAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Borrow ${f6(amt)} USDC`, () => S("morpho", "borrow", [mpTuple, amt, 0n, me, me])); $("borAmt").value = ""; };
 $("repBtn").onclick = async () => {
   need(); const v = $("repAmt").value.trim();
   const pos = await R.morpho.position(CFG.marketId, me);
@@ -463,10 +471,10 @@ $("repBtn").onclick = async () => {
     if (pos.borrowShares === 0n) return log("No debt to repay.", "err");
     const {m} = await marketState(); const est = debtOf(pos, m) * 101n / 100n;
     await ensureAllowance("usdc", CFG.morpho, est, "USDC for Morpho");
-    await tx("Repay all debt", () => W("morpho").repay(mpTuple, 0n, pos.borrowShares, me, "0x"));
+    await tx("Repay all debt", () => S("morpho", "repay", [mpTuple, 0n, pos.borrowShares, me, "0x"]));
   } else {
     const amt = p6(v); await ensureAllowance("usdc", CFG.morpho, amt, "USDC for Morpho");
-    await tx(`Repay ${f6(amt)} USDC`, () => W("morpho").repay(mpTuple, amt, 0n, me, "0x"));
+    await tx(`Repay ${f6(amt)} USDC`, () => S("morpho", "repay", [mpTuple, amt, 0n, me, "0x"]));
   }
   $("repAmt").value = "";
 };
@@ -474,7 +482,7 @@ $("liqBtn").onclick = async () => {
   need(); const b = $("liqBorrower").value.trim(); const amt = p18($("liqSeize").value);
   if (!ethers.isAddress(b)) return log("Enter the borrower's address.", "err"); if (amt === 0n) return log("Enter an amount to seize.", "err");
   await ensureAllowance("usdc", CFG.guni, ethers.MaxUint256 / 2n, "USDC for the wrapper");
-  await tx(`Liquidate ${short(b)}, seize ${f18(amt)} gUNI`, () => W("guni").liquidate(mpTuple, b, amt, 0n));
+  await tx(`Liquidate ${short(b)}, seize ${f18(amt)} gUNI`, () => S("guni", "liquidate", [mpTuple, b, amt, 0n]));
 };
 $("checkBtn").onclick = async () => {
   const a = ($("checkAddr").value.trim() || me); if (!ethers.isAddress(a || "")) return log("Enter an address.", "err");
@@ -484,7 +492,7 @@ $("checkBtn").onclick = async () => {
   out.innerHTML = `<strong>${short(a)}</strong> · collateral ${f18(pos.collateral)} gUNI (${f6(collateralValue(pos.collateral, price))} USDC) · debt ${f6(debt)} USDC · threshold ${f6(cap)} USDC · delegate ${del===ethers.ZeroAddress?"none":short(del)} · <strong>${debt > cap ? "liquidatable" : "healthy"}</strong>`;
   if (debt > cap) $("liqBorrower").value = a;
 };
-$("pxBtn").onclick = async () => { need(); const v = $("pxAmt").value.trim(); if (!v) return; const px = p6(v) * ORACLE_SCALE / 10n**18n; await tx(`Set oracle price to ${v} USDC/UNI`, () => W("oracle").setPrice(px)); };
+$("pxBtn").onclick = async () => { need(); const v = $("pxAmt").value.trim(); if (!v) return; const px = p6(v) * ORACLE_SCALE / 10n**18n; await tx(`Set oracle price to ${v} USDC/UNI`, () => S("oracle", "setPrice", [px])); };
 
 // ── contracts list ──
 const list = $("addrList");
