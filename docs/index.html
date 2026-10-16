@@ -64,8 +64,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .health i{display:block;height:100%;background:var(--ok);width:0%;transition:width .3s}
 .health.warn i{background:var(--warn)}.health.bad i{background:var(--bad)}
 table{width:100%;border-collapse:collapse;font-size:14px}
-th{font:500 12px/1 var(--body);color:var(--fg-2);text-align:left;padding:6px 0;border-bottom:1px solid var(--line)}
-td{padding:7px 0;border-bottom:1px solid var(--line);font:500 13px/1.4 var(--mono);font-variant-numeric:tabular-nums;vertical-align:top}
+th{font:500 12px/1 var(--body);color:var(--fg-2);text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
+td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);font:500 13px/1.4 var(--mono);font-variant-numeric:tabular-nums;vertical-align:top}
 td.r,th.r{text-align:right}
 .bar{height:4px;background:var(--accent);border-radius:2px;margin-top:5px;min-width:2px}
 .addr{font:500 12px/1 var(--mono);color:var(--fg-2);overflow-wrap:anywhere}
@@ -248,7 +248,7 @@ const ABI = {
   faucet: ["function mint(address,uint256)"],
   votes: ["function getVotes(address) view returns (uint256)"],
   guni: ["function wrap(uint256)","function wrap(uint256,address)","function unwrap(uint256,address)","function setDelegate(address)","function delegateOf(address) view returns (address)","function surrogateOf(address) view returns (address)","function votesVia(address) view returns (uint256)","function collateralOf(bytes32,address) view returns (uint256)","function liquidate((address,address,address,address,uint256),address,uint256,uint256) returns (uint256,uint256)","function marketCount() view returns (uint256)","event SurrogateDeployed(address indexed delegatee, address surrogate)","event DelegateSet(address indexed holder, address indexed delegatee)"],
-  morpho: ["event SupplyCollateral(bytes32 indexed id, address caller, address indexed onBehalf, uint256 assets)","function position(bytes32,address) view returns (uint256 supplyShares,uint128 borrowShares,uint128 collateral)","function market(bytes32) view returns (uint128 totalSupplyAssets,uint128 totalSupplyShares,uint128 totalBorrowAssets,uint128 totalBorrowShares,uint128 lastUpdate,uint128 fee)","function supplyCollateral((address,address,address,address,uint256),uint256,address,bytes)","function withdrawCollateral((address,address,address,address,uint256),uint256,address,address)","function borrow((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)","function repay((address,address,address,address,uint256),uint256,uint256,address,bytes) returns (uint256,uint256)"],
+  morpho: ["event SupplyCollateral(bytes32 indexed id, address indexed caller, address indexed onBehalf, uint256 assets)","function position(bytes32,address) view returns (uint256 supplyShares,uint128 borrowShares,uint128 collateral)","function market(bytes32) view returns (uint128 totalSupplyAssets,uint128 totalSupplyShares,uint128 totalBorrowAssets,uint128 totalBorrowShares,uint128 lastUpdate,uint128 fee)","function supplyCollateral((address,address,address,address,uint256),uint256,address,bytes)","function withdrawCollateral((address,address,address,address,uint256),uint256,address,address)","function borrow((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)","function repay((address,address,address,address,uint256),uint256,uint256,address,bytes) returns (uint256,uint256)"],
   oracle: ["function price() view returns (uint256)","function setPrice(uint256)"],
   irm: ["function borrowRateView((address,address,address,address,uint256),(uint128,uint128,uint128,uint128,uint128,uint128)) view returns (uint256)"]
 };
@@ -377,7 +377,7 @@ const knownBorrowers = new Set();
 async function refreshPositions(m, price){
   const from = Math.max((CFG.deployBlock || 1) - 1, 0);
   const logs = await R.morpho.queryFilter(R.morpho.filters.SupplyCollateral(CFG.marketId), from, "latest");
-  for (const l of logs) knownBorrowers.add(l.args.onBehalf);
+  for (const l of logs) if (l.args) knownBorrowers.add(l.args.onBehalf);
   if (me) knownBorrowers.add(me);
   const rows = [];
   for (const b of knownBorrowers){
