@@ -147,8 +147,8 @@ code{font:500 .92em var(--mono)}
   <p class="lead">Liquidations go through the wrapper, which verifies the borrower's position against Morpho and pays the liquidator in plain UNI. Only the borrower's delegate loses votes, and only by the seized amount. Direct <code>morpho.liquidate</code> on this market reverts.</p>
   <div class="row">
     <div class="field"><label for="liqBorrower">Borrower</label><input id="liqBorrower" placeholder="0x…"></div>
-    <div class="field"><label for="liqSeize">Seize (gUNI)</label><input id="liqSeize" placeholder="0.0" inputmode="decimal"></div>
-    <button class="danger" id="liqBtn">Approve USDC &amp; liquidate</button>
+    <div class="field"><label for="liqSeize">Seize (gUNI)</label><input id="liqSeize" placeholder="blank = maximum" inputmode="decimal"></div>
+    <button class="danger" id="liqBtn">Liquidate</button>
   </div>
   <div class="row" style="margin-top:12px">
     <div class="field"><label for="checkAddr">Check a position</label><input id="checkAddr" placeholder="0x…"></div>
@@ -166,7 +166,7 @@ code{font:500 .92em var(--mono)}
 
 <section class="panel">
   <h2>All positions <span class="n" id="posCount"></span></h2>
-  <p class="lead">Every account that has posted gUNI on this market, read from Morpho's events. Health is debt against the liquidation threshold (collateral × price × LLTV). Liquidatable rows prefill the form above.</p>
+  <p class="lead">Every account that has posted gUNI on this market, read from Morpho's events. Health is debt against the liquidation threshold (collateral × price × LLTV). "Liquidate" does the whole job: sizes the seizure to the debt, mints test USDC if you're short, approves the wrapper, liquidates. You receive plain UNI.</p>
   <div style="overflow-x:auto"><table id="posTable"><thead><tr><th>Borrower</th><th class="r">Collateral</th><th class="r">Debt (USDC)</th><th class="r">Health</th><th>Delegate</th><th></th></tr></thead><tbody id="posRows"><tr><td colspan="6" style="color:var(--fg-2)">–</td></tr></tbody></table></div>
 </section>
 
@@ -220,7 +220,7 @@ code{font:500 .92em var(--mono)}
   <span>Solidity 0.8.28 · Cancun · OpenZeppelin 5.2.0</span>
   <span>Morpho Blue on Sepolia</span>
   <span>Testnet. Oracle is open; nothing here has been audited.</span>
-  <span id="build">build 75b2491 · 2026-10-16 10:18 UTC</span>
+  <span id="build">build d37cd44 · 2026-10-16 10:32 UTC</span>
 </footer>
 </div>
 
@@ -413,14 +413,12 @@ async function refreshPositions(m, price){
       <td class="r">${f18(r.coll)}</td><td class="r">${f6(r.debt)}</td>
       <td class="r"><span class="pill ${cls}" style="padding:3px 7px">${r.debt === 0n ? "no debt" : (r.use === Infinity ? "∞" : r.use.toFixed(1) + "%")}${liq ? " · liquidatable" : ""}</span></td>
       <td>${r.del === ethers.ZeroAddress ? "–" : short(r.del)}</td>
-      <td class="r">${liq ? `<button class="quiet" style="padding:5px 9px;font-size:12px" data-liq="${r.b}" data-coll="${r.coll}">Liquidate</button>` : ""}</td>`;
+      <td class="r">${liq ? `<button class="danger" style="padding:5px 9px;font-size:12px" data-liq="${r.b}">Liquidate</button>` : ""}</td>`;
     tb.appendChild(tr);
   }
-  tb.querySelectorAll("button[data-liq]").forEach(btn => btn.onclick = () => {
-    $("liqBorrower").value = btn.dataset.liq;
-    $("liqSeize").value = ethers.formatUnits(BigInt(btn.dataset.coll) / 2n, 18);
-    $("liqBorrower").scrollIntoView({behavior: "smooth", block: "center"});
-    log("Prefilled liquidation for " + short(btn.dataset.liq) + " (half the collateral; adjust as needed).");
+  tb.querySelectorAll("button[data-liq]").forEach(btn => btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Liquidating…";
+    try{ await liquidateFull(btn.dataset.liq, 0n); } finally { btn.disabled = false; btn.textContent = "Liquidate"; }
   });
 }
 
@@ -485,11 +483,36 @@ $("repBtn").onclick = async () => {
   }
   $("repAmt").value = "";
 };
+// Morpho Blue liquidation incentive: LIF = min(1.15, 1 / (1 - 0.3 * (1 - LLTV)))
+function lif(){ const d = WAD - 3n * (WAD - MP.lltv) / 10n; const v = WAD * WAD / d; return v > 115n*WAD/100n ? 115n*WAD/100n : v; }
+// USDC the liquidator must repay for seizing `seized` collateral (rounded up)
+function repayFor(seized, price){ const v = seized * price / ORACLE_SCALE; return (v * WAD + lif() - 1n) / lif(); }
+// Largest seizable amount: covers the whole debt (with a 0.5% haircut for rounding) or all collateral, whichever is smaller
+function maxSeize(coll, debt, price){ const bySeize = debt * lif() / WAD * ORACLE_SCALE / price * 995n / 1000n; return bySeize < coll ? bySeize : coll; }
+
+async function liquidateFull(borrower, seized){
+  need();
+  const {m, price} = await marketState();
+  const pos = await R.morpho.position(CFG.marketId, borrower);
+  const debt = debtOf(pos, m), cap = maxBorrow(pos.collateral, price);
+  if (debt <= cap) return log(short(borrower) + " is healthy; nothing to liquidate.", "err");
+  if (!seized) seized = maxSeize(BigInt(pos.collateral), debt, price);
+  if (seized === 0n) return log("Nothing to seize.", "err");
+  const needUsdc = repayFor(seized, price) * 101n / 100n;
+  const bal = await R.usdc.balanceOf(me);
+  log(`Liquidating ${short(borrower)}: seize ${f18(seized)} gUNI, repay ≈ ${f6(repayFor(seized, price))} USDC`);
+  if (bal < needUsdc){
+    const mintAmt = needUsdc - bal;
+    if (mintAmt > 100_000n * 10n**6n) return log("Need more than the faucet gives per call; mint USDC manually first.", "err");
+    await tx(`Mint ${f6(mintAmt)} test USDC to cover the repayment`, () => S("usdc", "mint", [me, mintAmt]));
+  }
+  await ensureAllowance("usdc", CFG.guni, needUsdc, "USDC for the wrapper");
+  await tx(`Liquidate ${short(borrower)}, seize ${f18(seized)} gUNI`, () => S("guni", "liquidate", [mpTuple, borrower, seized, 0n]));
+}
 $("liqBtn").onclick = async () => {
-  need(); const b = $("liqBorrower").value.trim(); const amt = p18($("liqSeize").value);
-  if (!ethers.isAddress(b)) return log("Enter the borrower's address.", "err"); if (amt === 0n) return log("Enter an amount to seize.", "err");
-  await ensureAllowance("usdc", CFG.guni, ethers.MaxUint256 / 2n, "USDC for the wrapper");
-  await tx(`Liquidate ${short(b)}, seize ${f18(amt)} gUNI`, () => S("guni", "liquidate", [mpTuple, b, amt, 0n]));
+  const b = $("liqBorrower").value.trim(); if (!ethers.isAddress(b)) return log("Enter the borrower's address.", "err");
+  const v = $("liqSeize").value.trim(); const amt = v ? p18(v) : 0n;
+  await liquidateFull(b, amt);
 };
 $("checkBtn").onclick = async () => {
   const a = ($("checkAddr").value.trim() || me); if (!ethers.isAddress(a || "")) return log("Enter an address.", "err");
