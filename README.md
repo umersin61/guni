@@ -17,6 +17,19 @@ Three ideas, each small:
 
 Design write-up: *Introducing gUnits* (Api3, October 2026).
 
+## Live on Sepolia
+
+| Contract | Address |
+|---|---|
+| gUNI | [`0x93AC1BFeBE1aAdfc0014743C029D147aA6700130`](https://sepolia.etherscan.io/address/0x93AC1BFeBE1aAdfc0014743C029D147aA6700130) |
+| Test UNI (faucet) | [`0x9402DCAA2aA4D3443730f046Ec13A3c6322Fa762`](https://sepolia.etherscan.io/address/0x9402DCAA2aA4D3443730f046Ec13A3c6322Fa762) |
+| Test USDC (faucet) | [`0xc58B7F75614896779f3F229b3A180A0191e7e5CD`](https://sepolia.etherscan.io/address/0xc58B7F75614896779f3F229b3A180A0191e7e5CD) |
+| Oracle (settable, testnet) | [`0x21bbA218D2Db9517084320a0ceCCabc7D6346e1E`](https://sepolia.etherscan.io/address/0x21bbA218D2Db9517084320a0ceCCabc7D6346e1E) |
+| Morpho Blue | `0xd011EE229E7459ba1ddd22631eF7bF528d424A14` |
+| Market id | `0x54a776af41fe14d4771bf99b0481bf89696a7c5e9c4c13bec21c7097816048c5` |
+
+Frontend: **https://umersin61.github.io/guni/** (served from `docs/`).
+
 ## Layout
 
 ```
@@ -29,7 +42,7 @@ test/mocks/MockMorpho.sol    reproduces Morpho's state-before-transfer ordering
 script/DeploySepolia.s.sol   deploys everything and creates + registers the Morpho market
 script/Scenario.s.sol        on-chain walk-through: wrap → borrow → redelegate → liquidate → close
 script/build-frontend.sh     inlines deployments/sepolia.json into the frontend
-frontend/index.template.html single-file dApp (ethers v6)
+frontend/index.template.html single-file dApp (ethers v6); built copy in docs/ for GitHub Pages
 deployments/sepolia.json     live addresses
 ```
 

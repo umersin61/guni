@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>gUNI</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap">
+<style>
+/* Layout: a ledger. One narrow column of panels, each a numbered step in the lifecycle of a wrapped vote;
+   a right-hand rail (stacks on phone) shows the live state: your position and who the votes are going to. */
+:root{
+  --bg:#f6f7f4; --panel:#ffffff; --fg:#17201c; --fg-2:#5b6a62; --line:#dde3dd; --line-2:#c6cfc8;
+  --accent:#116b4a; --accent-fg:#ffffff; --accent-soft:#e3f1ea;
+  --warn:#9a5b00; --warn-soft:#fbefd9; --bad:#a8312b; --bad-soft:#f9e3e1; --ok:#116b4a;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1412; --panel:#161d1a; --fg:#e6ebe7; --fg-2:#9aa89f; --line:#26302b; --line-2:#36423c;
+  --accent:#4fcf97; --accent-fg:#0a1a12; --accent-soft:#163528;
+  --warn:#f0b454; --warn-soft:#3a2a10; --bad:#f08b84; --bad-soft:#3d1b19; --ok:#4fcf97; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0f1412; --panel:#161d1a; --fg:#e6ebe7; --fg-2:#9aa89f; --line:#26302b; --line-2:#36423c;
+  --accent:#4fcf97; --accent-fg:#0a1a12; --accent-soft:#163528;
+  --warn:#f0b454; --warn-soft:#3a2a10; --bad:#f08b84; --bad-soft:#3d1b19; --ok:#4fcf97; color-scheme:dark;}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--body)}
+body{padding-block:0 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+a{color:var(--accent)}
+.wrap{max-width:1080px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding:28px 0 18px;border-bottom:1px solid var(--line)}
+header h1{font:500 34px/1 var(--display);margin:0;letter-spacing:-.01em}
+header h1 small{font:400 15px/1 var(--body);color:var(--fg-2);margin-left:10px}
+.wallet{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{font:500 12px/1 var(--mono);padding:6px 10px;border:1px solid var(--line-2);border-radius:999px;color:var(--fg-2);letter-spacing:.02em}
+.pill.ok{border-color:var(--ok);color:var(--ok)}
+.pill.bad{border-color:var(--bad);color:var(--bad)}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,360px);gap:24px;padding-top:24px}
+@media (max-width:820px){main{grid-template-columns:minmax(0,1fr)}aside{order:-1}}
+section.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 20px;margin-bottom:16px;min-width:0}
+.panel h2{font:600 13px/1 var(--body);text-transform:uppercase;letter-spacing:.08em;color:var(--fg-2);margin:0 0 4px;display:flex;gap:10px;align-items:baseline}
+.panel h2 .n{font:500 13px/1 var(--mono);color:var(--accent)}
+.panel .lead{margin:0 0 14px;color:var(--fg-2);max-width:62ch;text-wrap:pretty}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.row>*{min-width:0}
+.field{display:flex;flex-direction:column;gap:4px;flex:1 1 160px}
+.field label{font:500 12px/1 var(--body);color:var(--fg-2)}
+.field .hint{font:400 12px/1.3 var(--mono);color:var(--fg-2)}
+input{font:500 15px/1 var(--mono);padding:9px 10px;border:1px solid var(--line-2);border-radius:4px;background:var(--bg);color:var(--fg);width:100%}
+input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input::placeholder{color:var(--fg-2);opacity:.7}
+button{font:600 14px/1 var(--body);padding:10px 14px;border-radius:4px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-fg);cursor:pointer;white-space:nowrap}
+button.ghost{background:transparent;color:var(--accent)}
+button.quiet{background:transparent;color:var(--fg-2);border-color:var(--line-2)}
+button.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:14px}
+.kv dt{color:var(--fg-2);margin:0}
+.kv dd{margin:0;font:500 14px/1.5 var(--mono);text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.big{font:500 30px/1.1 var(--display);font-variant-numeric:tabular-nums}
+.big small{font:400 13px/1 var(--body);color:var(--fg-2);margin-left:6px}
+.health{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:10px 0 4px}
+.health i{display:block;height:100%;background:var(--ok);width:0%;transition:width .3s}
+.health.warn i{background:var(--warn)}.health.bad i{background:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font:500 12px/1 var(--body);color:var(--fg-2);text-align:left;padding:6px 0;border-bottom:1px solid var(--line)}
+td{padding:7px 0;border-bottom:1px solid var(--line);font:500 13px/1.4 var(--mono);font-variant-numeric:tabular-nums;vertical-align:top}
+td.r,th.r{text-align:right}
+.bar{height:4px;background:var(--accent);border-radius:2px;margin-top:5px;min-width:2px}
+.addr{font:500 12px/1 var(--mono);color:var(--fg-2);overflow-wrap:anywhere}
+.tag{display:inline-block;font:500 11px/1 var(--mono);padding:3px 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent);margin-left:6px}
+.log{font:400 12px/1.6 var(--mono);color:var(--fg-2);max-height:220px;overflow:auto;padding:10px 12px;background:var(--bg);border-radius:4px;border:1px solid var(--line)}
+.log .ok{color:var(--ok)}.log .err{color:var(--bad)}.log a{color:inherit}
+.note{font-size:13px;color:var(--fg-2);padding:10px 12px;border-left:3px solid var(--line-2);margin:14px 0 0}
+.note.warn{border-color:var(--warn);background:var(--warn-soft);color:var(--fg)}
+footer{margin-top:24px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--fg-2);display:flex;flex-wrap:wrap;gap:8px 20px}
+code{font:500 .92em var(--mono)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>gUNI<small>governance-enabled UNI · Sepolia</small></h1>
+  <div class="wallet">
+    <span class="pill" id="netPill">no wallet</span>
+    <span class="pill" id="acctPill" hidden></span>
+    <button id="connectBtn">Connect wallet</button>
+  </div>
+</header>
+
+<main>
+<div id="steps">
+
+<section class="panel">
+  <h2><span class="n">01</span> Test tokens</h2>
+  <p class="lead">Sepolia-only faucets. UNI here is an ERC20Votes stand-in with the same <code>delegate()</code> selector as the real Uni token; USDC is a 6-decimal test token the market lends.</p>
+  <div class="row">
+    <button class="ghost" id="faucetUni">Mint 1,000 UNI</button>
+    <button class="ghost" id="faucetUsdc">Mint 1,000 USDC</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="n">02</span> Wrap</h2>
+  <p class="lead">1 UNI in, 1 gUNI out. The UNI goes into a surrogate contract that votes for your delegate. No fee, no owner, unwrap any time.</p>
+  <div class="row">
+    <div class="field"><label for="wrapAmt">Amount (UNI)</label><input id="wrapAmt" placeholder="0.0" inputmode="decimal"><span class="hint" id="uniBal">wallet: –</span></div>
+    <div class="field"><label for="wrapDel">Delegate</label><input id="wrapDel" placeholder="0x… (default: yourself)"><span class="hint" id="curDel">current delegate: –</span></div>
+    <button id="wrapBtn">Approve &amp; wrap</button>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <div class="field"><label for="unwrapAmt">Unwrap (gUNI)</label><input id="unwrapAmt" placeholder="0.0" inputmode="decimal"><span class="hint" id="guniBal">wallet: –</span></div>
+    <button class="ghost" id="unwrapBtn">Unwrap to UNI</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="n">03</span> Delegate</h2>
+  <p class="lead">One delegate per holder. Changing it moves your wallet balance <em>and</em> your open Morpho collateral to the new delegate's surrogate in a single UNI transfer. Morpho is never touched.</p>
+  <div class="row">
+    <div class="field"><label for="newDel">New delegate</label><input id="newDel" placeholder="0x…"></div>
+    <button id="setDelBtn">Re-delegate everything</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="n">04</span> Borrow on Morpho Blue</h2>
+  <p class="lead">Supply gUNI as collateral and borrow USDC, directly on Morpho. Your votes don't move: the wrapper mirrors your position and keeps the UNI in your delegate's surrogate.</p>
+  <div class="row">
+    <div class="field"><label for="supAmt">Supply collateral (gUNI)</label><input id="supAmt" placeholder="0.0" inputmode="decimal"></div>
+    <button id="supBtn">Approve &amp; supply</button>
+    <div class="field"><label for="wdAmt">Withdraw collateral (gUNI)</label><input id="wdAmt" placeholder="0.0" inputmode="decimal"></div>
+    <button class="ghost" id="wdBtn">Withdraw</button>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <div class="field"><label for="borAmt">Borrow (USDC)</label><input id="borAmt" placeholder="0.0" inputmode="decimal"><span class="hint" id="maxBorrow">max: –</span></div>
+    <button id="borBtn">Borrow</button>
+    <div class="field"><label for="repAmt">Repay (USDC)</label><input id="repAmt" placeholder="0.0 or leave blank for all" inputmode="decimal"></div>
+    <button class="ghost" id="repBtn">Approve &amp; repay</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="n">05</span> Liquidate</h2>
+  <p class="lead">Liquidations go through the wrapper, which verifies the borrower's position against Morpho and pays the liquidator in plain UNI. Only the borrower's delegate loses votes, and only by the seized amount. Direct <code>morpho.liquidate</code> on this market reverts.</p>
+  <div class="row">
+    <div class="field"><label for="liqBorrower">Borrower</label><input id="liqBorrower" placeholder="0x…"></div>
+    <div class="field"><label for="liqSeize">Seize (gUNI)</label><input id="liqSeize" placeholder="0.0" inputmode="decimal"></div>
+    <button class="danger" id="liqBtn">Approve USDC &amp; liquidate</button>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <div class="field"><label for="checkAddr">Check a position</label><input id="checkAddr" placeholder="0x…"></div>
+    <button class="quiet" id="checkBtn">Look up</button>
+  </div>
+  <div id="checkOut" class="note" hidden></div>
+  <div id="oracleAdmin" hidden>
+    <div class="note warn">You deployed the testnet oracle, so you can move the price to test liquidations. Current oracle price: <strong id="oraclePx">–</strong> USDC/UNI.</div>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label for="pxAmt">New price (USDC per UNI)</label><input id="pxAmt" placeholder="8.00" inputmode="decimal"></div>
+      <button class="quiet" id="pxBtn">Set oracle price</button>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Activity</h2>
+  <div class="log" id="log">Connect a wallet on Sepolia to begin.</div>
+</section>
+
+</div>
+
+<aside>
+<section class="panel">
+  <h2>Your position</h2>
+  <div class="big" id="collBig">–<small>gUNI collateral</small></div>
+  <div class="health" id="healthBar"><i></i></div>
+  <div class="hint" id="healthTxt" style="font:400 12px/1.4 var(--mono);color:var(--fg-2)">–</div>
+  <dl class="kv" style="margin-top:14px">
+    <dt>Collateral value</dt><dd id="collVal">–</dd>
+    <dt>Debt</dt><dd id="debt">–</dd>
+    <dt>Borrow APR</dt><dd id="apr">–</dd>
+    <dt>LLTV</dt><dd id="lltv">–</dd>
+    <dt>Oracle price</dt><dd id="price">–</dd>
+    <dt>Your delegate</dt><dd id="delegateShow">–</dd>
+    <dt>Votes you direct</dt><dd id="votesYou">–</dd>
+    <dt>Wallet gUNI</dt><dd id="guniBal2">–</dd>
+    <dt>Wallet UNI</dt><dd id="uniBal2">–</dd>
+    <dt>Wallet USDC</dt><dd id="usdcBal">–</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Where the votes go</h2>
+  <p class="lead" style="font-size:13px">UNI held by each delegate's surrogate. Collateral posted on Morpho is counted here, because it never left the surrogate.</p>
+  <table><thead><tr><th>Delegate</th><th class="r">UNI voting</th></tr></thead><tbody id="delRows"><tr><td colspan="2" style="color:var(--fg-2)">–</td></tr></tbody></table>
+  <dl class="kv" style="margin-top:12px">
+    <dt>gUNI supply</dt><dd id="supply">–</dd>
+    <dt>UNI in surrogates</dt><dd id="surrTotal">–</dd>
+    <dt>Market USDC supplied</dt><dd id="mktSupply">–</dd>
+    <dt>Market USDC borrowed</dt><dd id="mktBorrow">–</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Contracts</h2>
+  <dl class="kv" id="addrList" style="grid-template-columns:auto 1fr"></dl>
+</section>
+</aside>
+</main>
+
+<footer>
+  <span>Solidity 0.8.28 · Cancun · OpenZeppelin 5.2.0</span>
+  <span>Morpho Blue on Sepolia</span>
+  <span>Testnet. Nothing here has been audited.</span>
+</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<script>
+const CFG = {
+  "chainId": 11155111,
+  "morpho": "0xd011EE229E7459ba1ddd22631eF7bF528d424A14",
+  "irm": "0x8C5dDCD3F601c91D1BF51c8ec26066010ACAbA7c",
+  "uni": "0x9402DCAA2aA4D3443730f046Ec13A3c6322Fa762",
+  "usdc": "0xc58B7F75614896779f3F229b3A180A0191e7e5CD",
+  "oracle": "0x21bbA218D2Db9517084320a0ceCCabc7D6346e1E",
+  "guni": "0x93AC1BFeBE1aAdfc0014743C029D147aA6700130",
+  "lltv": "625000000000000000",
+  "marketId": "0x54a776af41fe14d4771bf99b0481bf89696a7c5e9c4c13bec21c7097816048c5",
+  "deployBlock": 11926422
+};
+const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+const EXPLORER = "https://sepolia.etherscan.io";
+
+const MP = {loanToken: CFG.usdc, collateralToken: CFG.guni, oracle: CFG.oracle, irm: CFG.irm, lltv: BigInt(CFG.lltv)};
+const WAD = 10n**18n, ORACLE_SCALE = 10n**36n;
+
+const ABI = {
+  erc20: ["function balanceOf(address) view returns (uint256)","function allowance(address,address) view returns (uint256)","function approve(address,uint256) returns (bool)","function decimals() view returns (uint8)","function symbol() view returns (string)","function totalSupply() view returns (uint256)"],
+  faucet: ["function mint(address,uint256)"],
+  votes: ["function getVotes(address) view returns (uint256)"],
+  guni: ["function wrap(uint256)","function wrap(uint256,address)","function unwrap(uint256,address)","function setDelegate(address)","function delegateOf(address) view returns (address)","function surrogateOf(address) view returns (address)","function votesVia(address) view returns (uint256)","function collateralOf(bytes32,address) view returns (uint256)","function liquidate((address,address,address,address,uint256),address,uint256,uint256) returns (uint256,uint256)","function marketCount() view returns (uint256)","event SurrogateDeployed(address indexed delegatee, address surrogate)","event DelegateSet(address indexed holder, address indexed delegatee)"],
+  morpho: ["function position(bytes32,address) view returns (uint256 supplyShares,uint128 borrowShares,uint128 collateral)","function market(bytes32) view returns (uint128 totalSupplyAssets,uint128 totalSupplyShares,uint128 totalBorrowAssets,uint128 totalBorrowShares,uint128 lastUpdate,uint128 fee)","function supplyCollateral((address,address,address,address,uint256),uint256,address,bytes)","function withdrawCollateral((address,address,address,address,uint256),uint256,address,address)","function borrow((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)","function repay((address,address,address,address,uint256),uint256,uint256,address,bytes) returns (uint256,uint256)"],
+  oracle: ["function price() view returns (uint256)","function OWNER() view returns (address)","function setPrice(uint256)"],
+  irm: ["function borrowRateView((address,address,address,address,uint256),(uint128,uint128,uint128,uint128,uint128,uint128)) view returns (uint256)"]
+};
+const mpTuple = [MP.loanToken, MP.collateralToken, MP.oracle, MP.irm, MP.lltv];
+
+const $ = id => document.getElementById(id);
+const readProvider = new ethers.JsonRpcProvider(RPC, 11155111, {staticNetwork: true});
+let browserProvider, signer, me;
+const R = {}; // read-only contracts
+for (const [k, addr, abi] of [["uni", CFG.uni, [...ABI.erc20, ...ABI.faucet, ...ABI.votes]],["usdc", CFG.usdc, [...ABI.erc20, ...ABI.faucet]],["guni", CFG.guni, [...ABI.erc20, ...ABI.guni]],["morpho", CFG.morpho, ABI.morpho],["oracle", CFG.oracle, ABI.oracle],["irm", CFG.irm, ABI.irm]]) R[k] = new ethers.Contract(addr, abi, readProvider);
+const W = k => R[k].connect(signer);
+
+const f18 = (v, d=2) => Number(ethers.formatUnits(v, 18)).toLocaleString(undefined,{maximumFractionDigits:d});
+const f6 = (v, d=2) => Number(ethers.formatUnits(v, 6)).toLocaleString(undefined,{maximumFractionDigits:d});
+const short = a => a ? a.slice(0,6)+"…"+a.slice(-4) : "–";
+const p18 = s => ethers.parseUnits((s||"0").trim()||"0", 18);
+const p6 = s => ethers.parseUnits((s||"0").trim()||"0", 6);
+
+function log(msg, cls, hash){
+  const el = $("log"); if (el.textContent.startsWith("Connect a wallet")) el.textContent = "";
+  const line = document.createElement("div"); if (cls) line.className = cls;
+  line.textContent = new Date().toLocaleTimeString() + "  " + msg + " ";
+  if (hash){ const a = document.createElement("a"); a.href = EXPLORER+"/tx/"+hash; a.target="_blank"; a.rel="noopener"; a.textContent = short(hash); line.appendChild(a); }
+  el.prepend(line);
+}
+
+async function tx(label, fn){
+  try{
+    log(label + " · confirm in wallet…");
+    const t = await fn();
+    log(label + " · pending", null, t.hash);
+    const rc = await t.wait();
+    log(label + " · confirmed in block " + rc.blockNumber, "ok", t.hash);
+    await refresh();
+    return rc;
+  }catch(e){
+    const m = (e.shortMessage || e.message || String(e)).split("\n")[0];
+    const reason = e.revert?.name ? ` (${e.revert.name})` : (e.data && typeof e.data === "string" ? decodeError(e.data) : "");
+    log(label + " · failed: " + m + reason, "err");
+    throw e;
+  }
+}
+function decodeError(data){
+  try{ const d = R.guni.interface.parseError(data); if (d) return ` (${d.name})`; }catch{}
+  return "";
+}
+async function ensureAllowance(tokenKey, spender, amount, label){
+  const cur = await R[tokenKey].allowance(me, spender);
+  if (cur >= amount) return;
+  await tx(`Approve ${label}`, () => W(tokenKey).approve(spender, ethers.MaxUint256));
+}
+
+// ── wallet ──
+async function connect(){
+  if (!window.ethereum){ log("No injected wallet found. Install MetaMask or open this page in a wallet browser.", "err"); return; }
+  browserProvider = new ethers.BrowserProvider(window.ethereum);
+  await browserProvider.send("eth_requestAccounts", []);
+  const net = await browserProvider.getNetwork();
+  if (net.chainId !== 11155111n){
+    try{ await browserProvider.send("wallet_switchEthereumChain", [{chainId: "0xaa36a7"}]); }
+    catch(e){ log("Switch your wallet to Sepolia (chain 11155111).", "err"); $("netPill").textContent = "wrong network"; $("netPill").className="pill bad"; return; }
+    browserProvider = new ethers.BrowserProvider(window.ethereum);
+  }
+  signer = await browserProvider.getSigner(); me = await signer.getAddress();
+  $("netPill").textContent = "sepolia"; $("netPill").className = "pill ok";
+  $("acctPill").textContent = short(me); $("acctPill").hidden = false;
+  $("connectBtn").textContent = "Connected";
+  $("checkAddr").placeholder = me;
+  log("Connected " + me, "ok");
+  await refresh();
+}
+if (window.ethereum){
+  window.ethereum.on?.("accountsChanged", () => location.reload());
+  window.ethereum.on?.("chainChanged", () => location.reload());
+}
+
+// ── reads ──
+async function marketState(){
+  const m = await R.morpho.market(CFG.marketId);
+  const price = await R.oracle.price();
+  let apr = null;
+  try{ const rate = await R.irm.borrowRateView(mpTuple, [m.totalSupplyAssets, m.totalSupplyShares, m.totalBorrowAssets, m.totalBorrowShares, m.lastUpdate, m.fee]); apr = Number(rate) * 31536000 / 1e18; }catch{}
+  return {m, price, apr};
+}
+function debtOf(pos, m){
+  if (pos.borrowShares === 0n) return 0n;
+  // Morpho's toAssetsUp with virtual shares/assets
+  const VS = 10n**6n, VA = 1n;
+  const totA = BigInt(m.totalBorrowAssets) + VA, totS = BigInt(m.totalBorrowShares) + VS;
+  return (BigInt(pos.borrowShares) * totA + totS - 1n) / totS;
+}
+function collateralValue(coll, price){ return BigInt(coll) * price / ORACLE_SCALE; } // 6-dec USDC
+function maxBorrow(coll, price){ return collateralValue(coll, price) * MP.lltv / WAD; }
+
+async function refreshGlobal(){
+  const {m, price, apr} = await marketState();
+  $("price").textContent = f6(price * 10n**18n / ORACLE_SCALE, 4) + " USDC";
+  $("oraclePx").textContent = f6(price * 10n**18n / ORACLE_SCALE, 4);
+  $("apr").textContent = apr === null ? "–" : (apr*100).toFixed(2) + " %";
+  $("lltv").textContent = (Number(MP.lltv) / 1e16).toFixed(1) + " %";
+  $("mktSupply").textContent = f6(m.totalSupplyAssets) + " USDC";
+  $("mktBorrow").textContent = f6(m.totalBorrowAssets) + " USDC";
+  const supply = await R.guni.totalSupply();
+  $("supply").textContent = f18(supply) + " gUNI";
+  // delegates: every surrogate ever deployed
+  const logs = await R.guni.queryFilter(R.guni.filters.SurrogateDeployed(), Math.max((CFG.deployBlock || 1) - 1, 0), "latest").catch(e => { log("Could not load delegate list: " + (e.shortMessage || e.message), "err"); return []; });
+  const dels = [...new Set(logs.map(l => l.args.delegatee))];
+  const rows = [];
+  let total = 0n;
+  for (const d of dels){ const v = await R.guni.votesVia(d); total += v; rows.push([d, v]); }
+  rows.sort((a,b) => (b[1] > a[1]) - (b[1] < a[1]));
+  $("surrTotal").textContent = f18(total) + " UNI";
+  const tb = $("delRows"); tb.innerHTML = "";
+  if (!rows.length) tb.innerHTML = '<tr><td colspan="2" style="color:var(--fg-2)">No surrogates yet.</td></tr>';
+  for (const [d, v] of rows){
+    const tr = document.createElement("tr");
+    const pct = total ? Number(v * 10000n / total) / 100 : 0;
+    tr.innerHTML = `<td><a class="addr" href="${EXPLORER}/address/${d}" target="_blank" rel="noopener">${short(d)}</a>${me && d.toLowerCase()===me.toLowerCase() ? '<span class="tag">you</span>' : ""}<div class="bar" style="width:${Math.max(pct,0.5)}%"></div></td><td class="r">${f18(v)}<div style="color:var(--fg-2);font-weight:400">${pct.toFixed(1)}%</div></td>`;
+    tb.appendChild(tr);
+  }
+  return {m, price};
+}
+
+async function refreshMe(m, price){
+  if (!me) return;
+  const [uni, guni, usdc, del, pos, mirror] = await Promise.all([
+    R.uni.balanceOf(me), R.guni.balanceOf(me), R.usdc.balanceOf(me), R.guni.delegateOf(me),
+    R.morpho.position(CFG.marketId, me), R.guni.collateralOf(CFG.marketId, me)
+  ]);
+  $("uniBal").textContent = "wallet: " + f18(uni) + " UNI"; $("uniBal2").textContent = f18(uni);
+  $("guniBal").textContent = "wallet: " + f18(guni) + " gUNI"; $("guniBal2").textContent = f18(guni);
+  $("usdcBal").textContent = f6(usdc);
+  const delTxt = del === ethers.ZeroAddress ? "none yet (defaults to you)" : (del.toLowerCase()===me.toLowerCase() ? "yourself" : short(del));
+  $("curDel").textContent = "current delegate: " + delTxt; $("delegateShow").textContent = delTxt;
+  $("wrapDel").disabled = del !== ethers.ZeroAddress; if (del !== ethers.ZeroAddress) $("wrapDel").value = "";
+  $("votesYou").textContent = f18(guni + BigInt(pos.collateral)) + " UNI";
+  $("collBig").innerHTML = f18(pos.collateral) + "<small>gUNI collateral" + (BigInt(pos.collateral) !== mirror ? " · mirror mismatch!" : "") + "</small>";
+  const debt = debtOf(pos, m), val = collateralValue(pos.collateral, price), cap = maxBorrow(pos.collateral, price);
+  $("collVal").textContent = f6(val) + " USDC"; $("debt").textContent = f6(debt) + " USDC";
+  const room = cap > debt ? cap - debt : 0n;
+  $("maxBorrow").textContent = "max: " + f6(room) + " USDC";
+  const bar = $("healthBar"), use = cap ? Number(debt * 10000n / cap) / 100 : 0;
+  bar.className = "health" + (use >= 100 ? " bad" : use >= 85 ? " warn" : "");
+  bar.firstElementChild.style.width = Math.min(use, 100) + "%";
+  $("healthTxt").textContent = debt === 0n ? "no debt" : `${use.toFixed(1)}% of liquidation threshold used${use >= 100 ? " · liquidatable" : ""}`;
+  try{ const owner = await R.oracle.OWNER(); $("oracleAdmin").hidden = owner.toLowerCase() !== me.toLowerCase(); }catch{}
+}
+
+async function refresh(){
+  try{ const {m, price} = await refreshGlobal(); await refreshMe(m, price); }
+  catch(e){ log("Read failed: " + (e.shortMessage || e.message), "err"); }
+}
+
+// ── actions ──
+const need = () => { if (!signer) { log("Connect a wallet first.", "err"); throw new Error("no signer"); } };
+$("connectBtn").onclick = connect;
+$("faucetUni").onclick = () => { need(); tx("Mint 1,000 UNI", () => W("uni").mint(me, p18("1000"))); };
+$("faucetUsdc").onclick = () => { need(); tx("Mint 1,000 USDC", () => W("usdc").mint(me, p6("1000"))); };
+$("wrapBtn").onclick = async () => {
+  need(); const amt = p18($("wrapAmt").value); if (amt === 0n) return log("Enter an amount.", "err");
+  await ensureAllowance("uni", CFG.guni, amt, "UNI");
+  const d = $("wrapDel").value.trim();
+  if (d && !$("wrapDel").disabled){ if (!ethers.isAddress(d)) return log("Delegate is not a valid address.", "err"); await tx(`Wrap ${f18(amt)} UNI → ${short(d)}`, () => W("guni")["wrap(uint256,address)"](amt, d)); }
+  else await tx(`Wrap ${f18(amt)} UNI`, () => W("guni")["wrap(uint256)"](amt));
+  $("wrapAmt").value = "";
+};
+$("unwrapBtn").onclick = async () => { need(); const amt = p18($("unwrapAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Unwrap ${f18(amt)} gUNI`, () => W("guni").unwrap(amt, me)); $("unwrapAmt").value = ""; };
+$("setDelBtn").onclick = async () => { need(); const d = $("newDel").value.trim(); if (!ethers.isAddress(d)) return log("Enter a valid delegate address.", "err"); await tx(`Re-delegate to ${short(d)}`, () => W("guni").setDelegate(d)); $("newDel").value = ""; };
+$("supBtn").onclick = async () => { need(); const amt = p18($("supAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await ensureAllowance("guni", CFG.morpho, amt, "gUNI for Morpho"); await tx(`Supply ${f18(amt)} gUNI collateral`, () => W("morpho").supplyCollateral(mpTuple, amt, me, "0x")); $("supAmt").value = ""; };
+$("wdBtn").onclick = async () => { need(); const amt = p18($("wdAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Withdraw ${f18(amt)} gUNI collateral`, () => W("morpho").withdrawCollateral(mpTuple, amt, me, me)); $("wdAmt").value = ""; };
+$("borBtn").onclick = async () => { need(); const amt = p6($("borAmt").value); if (amt === 0n) return log("Enter an amount.", "err"); await tx(`Borrow ${f6(amt)} USDC`, () => W("morpho").borrow(mpTuple, amt, 0n, me, me)); $("borAmt").value = ""; };
+$("repBtn").onclick = async () => {
+  need(); const v = $("repAmt").value.trim();
+  const pos = await R.morpho.position(CFG.marketId, me);
+  if (!v){ // repay everything by shares
+    if (pos.borrowShares === 0n) return log("No debt to repay.", "err");
+    const {m} = await marketState(); const est = debtOf(pos, m) * 101n / 100n;
+    await ensureAllowance("usdc", CFG.morpho, est, "USDC for Morpho");
+    await tx("Repay all debt", () => W("morpho").repay(mpTuple, 0n, pos.borrowShares, me, "0x"));
+  } else {
+    const amt = p6(v); await ensureAllowance("usdc", CFG.morpho, amt, "USDC for Morpho");
+    await tx(`Repay ${f6(amt)} USDC`, () => W("morpho").repay(mpTuple, amt, 0n, me, "0x"));
+  }
+  $("repAmt").value = "";
+};
+$("liqBtn").onclick = async () => {
+  need(); const b = $("liqBorrower").value.trim(); const amt = p18($("liqSeize").value);
+  if (!ethers.isAddress(b)) return log("Enter the borrower's address.", "err"); if (amt === 0n) return log("Enter an amount to seize.", "err");
+  await ensureAllowance("usdc", CFG.guni, ethers.MaxUint256 / 2n, "USDC for the wrapper");
+  await tx(`Liquidate ${short(b)}, seize ${f18(amt)} gUNI`, () => W("guni").liquidate(mpTuple, b, amt, 0n));
+};
+$("checkBtn").onclick = async () => {
+  const a = ($("checkAddr").value.trim() || me); if (!ethers.isAddress(a || "")) return log("Enter an address.", "err");
+  const {m, price} = await marketState(); const pos = await R.morpho.position(CFG.marketId, a);
+  const debt = debtOf(pos, m), cap = maxBorrow(pos.collateral, price), del = await R.guni.delegateOf(a);
+  const out = $("checkOut"); out.hidden = false;
+  out.innerHTML = `<strong>${short(a)}</strong> · collateral ${f18(pos.collateral)} gUNI (${f6(collateralValue(pos.collateral, price))} USDC) · debt ${f6(debt)} USDC · threshold ${f6(cap)} USDC · delegate ${del===ethers.ZeroAddress?"none":short(del)} · <strong>${debt > cap ? "liquidatable" : "healthy"}</strong>`;
+  if (debt > cap) $("liqBorrower").value = a;
+};
+$("pxBtn").onclick = async () => { need(); const v = $("pxAmt").value.trim(); if (!v) return; const px = p6(v) * ORACLE_SCALE / 10n**18n; await tx(`Set oracle price to ${v} USDC/UNI`, () => W("oracle").setPrice(px)); };
+
+// ── contracts list ──
+const list = $("addrList");
+for (const [k, label] of [["guni","gUNI"],["uni","Test UNI"],["usdc","Test USDC"],["oracle","Oracle"],["morpho","Morpho Blue"],["irm","IRM"]]){
+  const dt = document.createElement("dt"); dt.textContent = label;
+  const dd = document.createElement("dd"); dd.innerHTML = `<a class="addr" href="${EXPLORER}/address/${CFG[k]}" target="_blank" rel="noopener">${short(CFG[k])}</a>`;
+  list.append(dt, dd);
+}
+const dt = document.createElement("dt"); dt.textContent = "Market id"; const dd = document.createElement("dd"); dd.innerHTML = `<span class="addr">${short(CFG.marketId)}</span>`; list.append(dt, dd);
+
+refresh();
+setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 30000);
+</script>
+</body>
+</html>
