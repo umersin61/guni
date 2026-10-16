@@ -68,6 +68,7 @@ contract Scenario is Script {
         g.setDelegate(delegateB);
         console.log("redelegated  votes A:", uni.getVotes(delegateA) / 1e18, "votes B:", uni.getVotes(delegateB) / 1e18);
 
+        usdc.mint(me, 100e6); // interest accrues between broadcast steps on a live chain
         morpho.repay(mp, 0, _shares(morpho, id, me), me, "");
         morpho.withdrawCollateral(mp, 600e18, me, me);
         g.unwrap(1_000e18, me);
@@ -91,6 +92,7 @@ contract Scenario is Script {
         console.log("liquidated   seized UNI:", seized / 1e18, "repaid USDC:", repaid / 1e6);
         console.log("             votes B:", uni.getVotes(delegateB) / 1e18, "mirror:", g.collateralOf(id, me) / 1e18);
         oracle.setPrice(p);
+        usdc.mint(me, 100e6);
         // close out
         morpho.repay(mp, 0, _shares(morpho, id, me), me, "");
         morpho.withdrawCollateral(mp, _coll(morpho, id, me), me, me);

@@ -63,9 +63,11 @@ AdaptiveCurveIRM: `0x8C5dDCD3F601c91D1BF51c8ec26066010ACAbA7c` · LLTV 62.5 %.
 ```sh
 export DEPLOYER_KEY=0x…   # funded on Sepolia
 export SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
-forge script script/DeploySepolia.s.sol --rpc-url sepolia --broadcast --verify   # --verify needs ETHERSCAN_API_KEY
+forge script script/DeploySepolia.s.sol --rpc-url sepolia --broadcast --slow --skip-simulation --verify
+# --skip-simulation: Sepolia meters contract creation far above forge's local estimate; let the RPC estimate gas.
+# --verify needs ETHERSCAN_API_KEY
 ./script/build-frontend.sh
-forge script script/Scenario.s.sol --rpc-url sepolia --broadcast   # optional end-to-end check
+forge script script/Scenario.s.sol --rpc-url sepolia --broadcast --slow --skip-simulation   # optional end-to-end check
 ```
 
 The deploy also supplies 50,000 test USDC to the market so borrowing works immediately.
