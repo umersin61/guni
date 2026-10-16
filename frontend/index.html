@@ -155,8 +155,8 @@ code{font:500 .92em var(--mono)}
     <button class="quiet" id="checkBtn">Look up</button>
   </div>
   <div id="checkOut" class="note" hidden></div>
-  <div id="oracleAdmin" hidden>
-    <div class="note warn">You deployed the testnet oracle, so you can move the price to test liquidations. Current oracle price: <strong id="oraclePx">–</strong> USDC/UNI.</div>
+  <div id="oracleAdmin">
+    <div class="note warn">Testnet oracle, anyone can set it. Move the price to push a position under water and try a liquidation. Current oracle price: <strong id="oraclePx">–</strong> USDC/UNI.</div>
     <div class="row" style="margin-top:10px">
       <div class="field"><label for="pxAmt">New price (USDC per UNI)</label><input id="pxAmt" placeholder="8.00" inputmode="decimal"></div>
       <button class="quiet" id="pxBtn">Set oracle price</button>
@@ -213,7 +213,7 @@ code{font:500 .92em var(--mono)}
 <footer>
   <span>Solidity 0.8.28 · Cancun · OpenZeppelin 5.2.0</span>
   <span>Morpho Blue on Sepolia</span>
-  <span>Testnet. Nothing here has been audited.</span>
+  <span>Testnet. Oracle is open; nothing here has been audited.</span>
 </footer>
 </div>
 
@@ -225,10 +225,10 @@ const CFG = {
   "irm": "0x8C5dDCD3F601c91D1BF51c8ec26066010ACAbA7c",
   "uni": "0x9402DCAA2aA4D3443730f046Ec13A3c6322Fa762",
   "usdc": "0xc58B7F75614896779f3F229b3A180A0191e7e5CD",
-  "oracle": "0x21bbA218D2Db9517084320a0ceCCabc7D6346e1E",
+  "oracle": "0x5F3fA6b65482888401E281255b152e1234fd2136",
   "guni": "0x93AC1BFeBE1aAdfc0014743C029D147aA6700130",
   "lltv": "625000000000000000",
-  "marketId": "0x54a776af41fe14d4771bf99b0481bf89696a7c5e9c4c13bec21c7097816048c5",
+  "marketId": "0xa988a1fde858e43b095df6624cca6d18b41fd58b2d2cf7dfcbb5c9caab2c8b2a",
   "deployBlock": 11926422
 };
 const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
@@ -243,7 +243,7 @@ const ABI = {
   votes: ["function getVotes(address) view returns (uint256)"],
   guni: ["function wrap(uint256)","function wrap(uint256,address)","function unwrap(uint256,address)","function setDelegate(address)","function delegateOf(address) view returns (address)","function surrogateOf(address) view returns (address)","function votesVia(address) view returns (uint256)","function collateralOf(bytes32,address) view returns (uint256)","function liquidate((address,address,address,address,uint256),address,uint256,uint256) returns (uint256,uint256)","function marketCount() view returns (uint256)","event SurrogateDeployed(address indexed delegatee, address surrogate)","event DelegateSet(address indexed holder, address indexed delegatee)"],
   morpho: ["function position(bytes32,address) view returns (uint256 supplyShares,uint128 borrowShares,uint128 collateral)","function market(bytes32) view returns (uint128 totalSupplyAssets,uint128 totalSupplyShares,uint128 totalBorrowAssets,uint128 totalBorrowShares,uint128 lastUpdate,uint128 fee)","function supplyCollateral((address,address,address,address,uint256),uint256,address,bytes)","function withdrawCollateral((address,address,address,address,uint256),uint256,address,address)","function borrow((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)","function repay((address,address,address,address,uint256),uint256,uint256,address,bytes) returns (uint256,uint256)"],
-  oracle: ["function price() view returns (uint256)","function OWNER() view returns (address)","function setPrice(uint256)"],
+  oracle: ["function price() view returns (uint256)","function setPrice(uint256)"],
   irm: ["function borrowRateView((address,address,address,address,uint256),(uint128,uint128,uint128,uint128,uint128,uint128)) view returns (uint256)"]
 };
 const mpTuple = [MP.loanToken, MP.collateralToken, MP.oracle, MP.irm, MP.lltv];
@@ -388,7 +388,6 @@ async function refreshMe(m, price){
   bar.className = "health" + (use >= 100 ? " bad" : use >= 85 ? " warn" : "");
   bar.firstElementChild.style.width = Math.min(use, 100) + "%";
   $("healthTxt").textContent = debt === 0n ? "no debt" : `${use.toFixed(1)}% of liquidation threshold used${use >= 100 ? " · liquidatable" : ""}`;
-  try{ const owner = await R.oracle.OWNER(); $("oracleAdmin").hidden = owner.toLowerCase() !== me.toLowerCase(); }catch{}
 }
 
 async function refresh(){
