@@ -165,6 +165,12 @@ code{font:500 .92em var(--mono)}
 </section>
 
 <section class="panel">
+  <h2>All positions <span class="n" id="posCount"></span></h2>
+  <p class="lead">Every account that has posted gUNI on this market, read from Morpho's events. Health is debt against the liquidation threshold (collateral × price × LLTV). Liquidatable rows prefill the form above.</p>
+  <div style="overflow-x:auto"><table id="posTable"><thead><tr><th>Borrower</th><th class="r">Collateral</th><th class="r">Debt (USDC)</th><th class="r">Health</th><th>Delegate</th><th></th></tr></thead><tbody id="posRows"><tr><td colspan="6" style="color:var(--fg-2)">–</td></tr></tbody></table></div>
+</section>
+
+<section class="panel">
   <h2>Activity</h2>
   <div class="log" id="log">Connect a wallet on Sepolia to begin.</div>
 </section>
@@ -242,7 +248,7 @@ const ABI = {
   faucet: ["function mint(address,uint256)"],
   votes: ["function getVotes(address) view returns (uint256)"],
   guni: ["function wrap(uint256)","function wrap(uint256,address)","function unwrap(uint256,address)","function setDelegate(address)","function delegateOf(address) view returns (address)","function surrogateOf(address) view returns (address)","function votesVia(address) view returns (uint256)","function collateralOf(bytes32,address) view returns (uint256)","function liquidate((address,address,address,address,uint256),address,uint256,uint256) returns (uint256,uint256)","function marketCount() view returns (uint256)","event SurrogateDeployed(address indexed delegatee, address surrogate)","event DelegateSet(address indexed holder, address indexed delegatee)"],
-  morpho: ["function position(bytes32,address) view returns (uint256 supplyShares,uint128 borrowShares,uint128 collateral)","function market(bytes32) view returns (uint128 totalSupplyAssets,uint128 totalSupplyShares,uint128 totalBorrowAssets,uint128 totalBorrowShares,uint128 lastUpdate,uint128 fee)","function supplyCollateral((address,address,address,address,uint256),uint256,address,bytes)","function withdrawCollateral((address,address,address,address,uint256),uint256,address,address)","function borrow((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)","function repay((address,address,address,address,uint256),uint256,uint256,address,bytes) returns (uint256,uint256)"],
+  morpho: ["event SupplyCollateral(bytes32 indexed id, address caller, address indexed onBehalf, uint256 assets)","function position(bytes32,address) view returns (uint256 supplyShares,uint128 borrowShares,uint128 collateral)","function market(bytes32) view returns (uint128 totalSupplyAssets,uint128 totalSupplyShares,uint128 totalBorrowAssets,uint128 totalBorrowShares,uint128 lastUpdate,uint128 fee)","function supplyCollateral((address,address,address,address,uint256),uint256,address,bytes)","function withdrawCollateral((address,address,address,address,uint256),uint256,address,address)","function borrow((address,address,address,address,uint256),uint256,uint256,address,address) returns (uint256,uint256)","function repay((address,address,address,address,uint256),uint256,uint256,address,bytes) returns (uint256,uint256)"],
   oracle: ["function price() view returns (uint256)","function setPrice(uint256)"],
   irm: ["function borrowRateView((address,address,address,address,uint256),(uint128,uint128,uint128,uint128,uint128,uint128)) view returns (uint256)"]
 };
@@ -363,7 +369,44 @@ async function refreshGlobal(){
     tr.innerHTML = `<td><a class="addr" href="${EXPLORER}/address/${d}" target="_blank" rel="noopener">${short(d)}</a>${me && d.toLowerCase()===me.toLowerCase() ? '<span class="tag">you</span>' : ""}<div class="bar" style="width:${Math.max(pct,0.5)}%"></div></td><td class="r">${f18(v)}<div style="color:var(--fg-2);font-weight:400">${pct.toFixed(1)}%</div></td>`;
     tb.appendChild(tr);
   }
+  await refreshPositions(m, price).catch(e => log("Could not load positions: " + (e.shortMessage || e.message), "err"));
   return {m, price};
+}
+
+const knownBorrowers = new Set();
+async function refreshPositions(m, price){
+  const from = Math.max((CFG.deployBlock || 1) - 1, 0);
+  const logs = await R.morpho.queryFilter(R.morpho.filters.SupplyCollateral(CFG.marketId), from, "latest");
+  for (const l of logs) knownBorrowers.add(l.args.onBehalf);
+  if (me) knownBorrowers.add(me);
+  const rows = [];
+  for (const b of knownBorrowers){
+    const [pos, del] = await Promise.all([R.morpho.position(CFG.marketId, b), R.guni.delegateOf(b)]);
+    if (pos.collateral === 0n && pos.borrowShares === 0n) continue;
+    const debt = debtOf(pos, m), cap = maxBorrow(pos.collateral, price);
+    rows.push({b, coll: BigInt(pos.collateral), debt, cap, del, use: cap ? Number(debt * 10000n / cap) / 100 : (debt > 0n ? Infinity : 0)});
+  }
+  rows.sort((a, c) => c.use - a.use);
+  $("posCount").textContent = rows.length ? String(rows.length) : "";
+  const tb = $("posRows"); tb.innerHTML = "";
+  if (!rows.length){ tb.innerHTML = '<tr><td colspan="6" style="color:var(--fg-2)">No open positions.</td></tr>'; return; }
+  for (const r of rows){
+    const liq = r.debt > r.cap;
+    const tr = document.createElement("tr");
+    const cls = liq ? "bad" : r.use >= 85 ? "warn" : "ok";
+    tr.innerHTML = `<td><a class="addr" href="${EXPLORER}/address/${r.b}" target="_blank" rel="noopener">${short(r.b)}</a>${me && r.b.toLowerCase()===me.toLowerCase() ? '<span class="tag">you</span>' : ""}</td>
+      <td class="r">${f18(r.coll)}</td><td class="r">${f6(r.debt)}</td>
+      <td class="r"><span class="pill ${cls}" style="padding:3px 7px">${r.debt === 0n ? "no debt" : (r.use === Infinity ? "∞" : r.use.toFixed(1) + "%")}${liq ? " · liquidatable" : ""}</span></td>
+      <td>${r.del === ethers.ZeroAddress ? "–" : short(r.del)}</td>
+      <td class="r">${liq ? `<button class="quiet" style="padding:5px 9px;font-size:12px" data-liq="${r.b}" data-coll="${r.coll}">Liquidate</button>` : ""}</td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll("button[data-liq]").forEach(btn => btn.onclick = () => {
+    $("liqBorrower").value = btn.dataset.liq;
+    $("liqSeize").value = ethers.formatUnits(BigInt(btn.dataset.coll) / 2n, 18);
+    $("liqBorrower").scrollIntoView({behavior: "smooth", block: "center"});
+    log("Prefilled liquidation for " + short(btn.dataset.liq) + " (half the collateral; adjust as needed).");
+  });
 }
 
 async function refreshMe(m, price){
