@@ -255,7 +255,13 @@ async function S(k, method, args){
   const data = R[k].interface.encodeFunctionData(method, args);
   const to = CFG[k];
   const gas = await readProvider.estimateGas({from: me, to, data}); // reverts surface here, with reason
-  const hash = await window.ethereum.request({method: "eth_sendTransaction", params: [{from: me, to, data, gas: "0x" + (gas * 130n / 100n).toString(16)}]});
+  // Pre-fill everything a wallet would otherwise fetch from its own RPC (nonce, fees), so a broken wallet RPC can't block signing.
+  const [nonce, fee] = await Promise.all([readProvider.getTransactionCount(me, "pending"), readProvider.getFeeData()]);
+  const hex = v => "0x" + BigInt(v).toString(16);
+  const tx = {from: me, to, data, value: "0x0", gas: hex(gas * 130n / 100n), nonce: hex(nonce), chainId: "0xaa36a7"};
+  if (fee.maxFeePerGas && fee.maxPriorityFeePerGas){ tx.maxFeePerGas = hex(fee.maxFeePerGas * 2n); tx.maxPriorityFeePerGas = hex(fee.maxPriorityFeePerGas); }
+  else if (fee.gasPrice) tx.gasPrice = hex(fee.gasPrice * 2n);
+  const hash = await window.ethereum.request({method: "eth_sendTransaction", params: [tx]});
   return {hash, wait: () => readProvider.waitForTransaction(hash, 1, 180000)};
 }
 
